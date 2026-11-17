@@ -13,7 +13,7 @@ Bits & Giggles
 Student Accommodation
 
 ## Date
-15 Nov 2026
+17 Nov 2026
 
 # Group Members
 
@@ -23,6 +23,8 @@ Student Accommodation
 | Raymond Sookdeo | 816044791 | Cyborg2169 |
 | Keon Cummings | 816042834 | Zydem |
 | Calliste Charles | 816036888 | calliste2003 |
+
+Calliste's commits appear under his second GitHub account, madmancharlo-png.
 
 # Assigned Project Details
 
@@ -38,7 +40,7 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 # Repo URL and Trello invite link
 
 - Repo URL: https://github.com/KireseTashaMaharaj/comp3613-student-accommodation
-- Trello invite link: [TODO: add Trello invite link]
+- Trello invite link: https://trello.com/invite/b/6afa14e50c61eaff6fe541ca/ATTIe681ab9ba7da000f241b3afd0602f0c681B3A252/comp-3613-bits-giggles
 
 # Requirements
 
@@ -69,6 +71,15 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 | REQ-23 | Non-functional | All users need to log in to access the platform. | Must | Access to the platform is restricted to authenticated users, with students authenticated by student ID and landlords by user login. | docs/interviews/student-accommodation-interview.md — “Yes, all users need to log in to access the platform. Students must authenticate with their student ID to browse listings, and landlords need to log in to manage their listings. This keeps everything secure and ensures that only eligible users can access the information they need.” |
 | REQ-24 | Functional | Landlords need to be able to create and submit a listing, and they can also edit it if they want to update details or add photos. | Must | A landlord can create, submit, and edit a listing, including updates to details and photos before the listing enters the admin review process. | docs/interviews/student-accommodation-interview.md — “Landlords need to be able to create and submit a listing, and they can also edit it if they want to update details or add photos.” |
 
+## Out of scope
+
+The following items are explicitly out of scope for this referral-only accommodation platform because they break the referral-only rule and are not part of a tenancy-management system:
+
+- Payments and recurring payment handling: “I think having the app handle payments could be convenient, especially if it allows for recurring payments.”
+- Deposits: “As for deposits, I do take one, usually about a month's rent.”
+- Leases and tenancy terms: “The length of the lease usually depends on the student’s needs...”
+- Maintenance requests and emergency repair handling: “One thing that might be worth mentioning is how I handle maintenance requests...” and “If a student needs something fixed, like the AC...”
+
 ## Assumptions
 
 - The public acceptance criteria say students see contact info on visible listings, but the admin interview says: “Privacy is a big deal, so we make sure that contact details are only visible to students once they’re interacting with the landlord directly.” This product decision conflict should be treated as an assumption to confirm.
@@ -76,7 +87,7 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 
 # Use case diagram
 
-[TODO: add image from docs/diagrams/ here]
+![Use case diagram](diagrams/use-case-diagram.png)
 
 ## Actor notes
 - Student Seeker: browses visible listings, applies location/price/amenity filters, and may communicate only with eligible listings.
@@ -85,11 +96,71 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 
 # Class diagram and pattern rationale
 
-## Class diagram
-[TODO: add class diagram from docs/design/ if available. No docs/design directory exists in this repository.]
+## Inherited structure
+
+![Inherited class diagram](diagrams/inherited-class-diagram.png)
+
+## Proposed design (State pattern)
+
+![Proposed class diagram](diagrams/proposed-class-diagram.png)
 
 ## Pattern rationale
-[TODO: add design rationale from docs/design/ if those files are added to the repo.]
+
+## Special feature: listing lifecycle and transitions
+
+**Inherited weakness.** `app/models/listing.py` stores a free-form `status`
+plus four integer flags (`flag_pending`, `flag_verified`, `flag_active`,
+`flag_rejected`); the model's own comment says the label often drifts from
+them. `app/services/lifecycle.py` `apply_action()` is a single conditional
+chain whose defect notes identify skipped verification, stale flags,
+rejected-listing activation, and invalid deactivation.
+`visible_to_students()` separately checks the active flag or status.
+Inactive is the status `inactive` with `flag_active` set to `0`.
+`app/services/listings.py` `transition()` persists both representations and
+omits landlord ownership checks. Role checks are in
+`app/services/listings.py`, and transition rules are in
+`app/services/lifecycle.py`. Nothing records who changed a status.
+
+**Pattern: State.** Allowed actions depend on the current state, so a
+`ListingLifecycle` Context wraps `Listing` and delegates each action to a
+`ListingState`. Seven concrete states (Pending, ProvisionallyAccepted,
+Verified, Active, Inactive, Rejected, Suspended) allow only legal
+transitions and raise `InvalidTransitionError` otherwise. `status` becomes
+the single source of truth, the four flags are removed, and visibility is
+derived from `ActiveState`.
+
+The interviews [docs/interviews/student-accommodation-interview.md](interviews/student-accommodation-interview.md) add four
+requirements the design covers:
+- REQ-09: `ProvisionallyAcceptedState`, approved but hidden from students.
+- REQ-10: `resubmit()` returns a Rejected listing to Pending.
+- REQ-11: `SuspendedState` is the admin force-deactivate; an admin-only
+  `reinstate()` restores the listing.
+- REQ-12: a `ListingStatusChange` record (listing, old status, new status,
+  actor, time, reason) is created on every transition.
+
+**Layering.** Routes call `ListingsService`, which authorizes (role and
+ownership), runs the Context, creates the `ListingStatusChange`, and saves
+both through `ListingRepository`. State classes hold transition rules only.
+
+**Alternatives.** Strategy is a weaker fit: this is state-dependent
+behaviour, not interchangeable algorithms. An enum or transition table with
+a central validator is viable, but it keeps the logic centralized as rules
+grow and gives no home for per-state behaviour such as visibility.
+
+### Assumptions
+
+- `ProvisionallyAccepted` and `Suspended` come from the interviews.
+- Pending may go straight to Verified.
+- `reinstate()` returns the listing to Active.
+
+**Sprint 2 outline.** Replace the chain in `app/services/lifecycle.py` with
+the Context and state classes. Remove the flags from
+`app/models/listing.py` and persistence. Add `ListingStatusChange` and
+`ListingRepository`. Update `app/services/listings.py` to delegate,
+authorize, record, and persist the canonical status. Change
+`app/routers/accommodation.py` only if needed. Test allowed and rejected
+transitions per state, authorization including ownership, persistence and
+history, visibility, and API behaviour end to end.
 
 # Interview transcripts
 
@@ -344,16 +415,6 @@ I mostly use my phone for this kind of stuff because it’s easier to browse on 
 ## Scenario: Job Board | Persona: Job Board Administrator | Date: 15 Nov 2026
 
 ```text
-COMP 3613 BITS&GIGGLES REQUIREMENTS INTERVIEW CHATS\
-
-We interviewed stakeholders for the Job Board and Career Advising scenarios before choosing Student Accommodation. 
-We chose it because our group members had worked in this domain before, also because the Campus Accommodation Admin 
-gave clear rules for each stage of a listing, which gave us a very detailed special feature to design.
- The Job Board had a similar lifecycle but its administrator reported no major issues with it and 
- the Career Advising concerns were mostly about outdated data and the interface. 
-
-
-
 Exploratory Interview 1: Job Board (job board administrator)
 Who does what: the admin approves listings, employers move applications, students apply and watch their status.
 Special feature rules: applications go submitted → reviewed → shortlisted, rejected, or hired, with no skipping and no undoing a rejection.
@@ -384,18 +445,6 @@ vector:job-board:administrator
 If I could improve something on the job board, the biggest thing would be to create a feedback loop for applicants. Right now, once students apply, they often don’t know if their application has been reviewed or what the next steps are. It would be great if we could provide them with more updates or notifications throughout the process.
 As for frustrations, sometimes employers find the revision process for rejected listings a bit cumbersome. They have to revise and resubmit before I can review it again, and that can slow things down. For students, the lack of feedback after applying is definitely a common concern. Overall, making the communication clearer for everyone involved would really help.
 07:00 PM2.8s
-Controls
-Shared interview budgetShared pool
-11k left · 4.0k / 15k used27% used
-Sized for one focused requirements interview. Usage updates after each reply.
-Scenario
-Job Board
-Locked · job-board
-PersonaJob Board AdministratorEmployerGraduate Applicant
-Mode
-Vector RAG▾
-
-▾
 ```
 
 ## Scenario: Career Advising | Persona: Career Advisor | Date: 15 Nov 2026
@@ -436,17 +485,6 @@ Great question! If we could improve a few things, I'd say the biggest focus shou
 Another area for improvement would be the user interface. Making it more intuitive could really help students navigate their options more easily. Sometimes, they get overwhelmed with information, so simplifying how we present the suggestions could make a big difference.
 As for frustrations, students occasionally feel like the recommendations don’t fully capture their interests or unique situations. They want to see more personalized options based on their specific courses or career aspirations. So, enhancing the system’s ability to tailor suggestions would definitely help improve their experience.
 07:29 PM2.9s
-Controls
-Shared interview budgetShared pool
-11k left · 4.0k / 15k used27% used
-Sized for one focused requirements interview. Usage updates after each reply.
-Scenario
-Career Based Advising
-Locked · career-advising
-PersonaCareer Advisor
-Mode
-Vector RAG▾
-
 ```
 
 # Sprint 1 Report
@@ -455,23 +493,55 @@ Vector RAG▾
 
 | Owner | Task number and title |
 | --- | --- |
-| [TODO: owner] | [TODO: task number and title] |
-| [TODO: owner] | [TODO: task number and title] |
+| Kirese | #1 Set up repository |
+| Kirese | #2 Create project doc draft |
+| Kirese | #3 Conduct exploratory interviews (Job Board, Career Advising) |
+| Kirese | #4 Conduct Student Accommodation interview (Campus Admin) |
+| Keon | #5 Write requirements list |
+| Keon | #6 Draw use case diagram |
+| Calliste | #7 Draw class diagrams and write pattern rationale |
+| Kirese | #8 Write Sprint 1 report |
+| Raymond | #9 Conduct Student Accommodation interview (Landlord) |
+| Keon | #10 Conduct Student Accommodation interview (Student Seeker) |
 
 ## Review
 
 | Owner | Task | Status | Comments |
 | --- | --- | --- | --- |
-| [TODO: owner] | [TODO: task] | [TODO: status] | [TODO: comments] |
-| [TODO: owner] | [TODO: task] | [TODO: status] | [TODO: comments] |
+| Kirese | #1 Set up repository | Completed | repo forked, collaborators added, link attached |
+| Kirese | #2 Create project doc draft | Completed | docs/report.md linked on card |
+| Kirese | #3 Conduct exploratory interviews (Job Board, Career Advising) | Completed | transcripts attached |
+| Kirese | #4 Conduct Student Accommodation interview (Campus Admin) | Completed | transcript attached |
+| Keon | #5 Write requirements list | Completed | first version pushed by Kirese in pull request #1, updated by Keon |
+| Keon | #6 Draw use case diagram | Completed | image in docs/diagrams |
+| Calliste | #7 Draw class diagrams and write pattern rationale | Completed | merged via pull request |
+| Kirese | #8 Write Sprint 1 report | Completed | compiled from the group's deliverables |
+| Raymond | #9 Conduct Student Accommodation interview (Landlord) | Completed | transcript attached |
+| Keon | #10 Conduct Student Accommodation interview (Student Seeker) | Completed | transcript attached |
 
 ## Retrospective
 
-[TODO: add Sprint 1 retrospective findings from project records if available. No sprint record files were found in this repository.]
+We interviewed all three Student Accommodation personas plus two exploratory scenarios, so every requirement ties back to a stakeholder statement. The requirements, use case diagram and class diagram ended up consistent after review, and we identified the State pattern from the defects in the inherited code. Most of the work happened in the last two days due to timing issues with group members, so we needed the extension. Transcripts were not added to the repo early on, so the requirements list had to be redone. Members also had issues with Git's pull requests: pull requests defaulted to the lecturer's repo, one member pushed straight to main, and one member's commits appeared under a second account. The use case diagram went through three versions because it was drawn before the requirements were settled. For Sprint 2, start immediately with a check-in every 1-2 days, use one branch and one pull request per Trello card with a different member reviewing, protect main, and fix Git account settings.
 
 ## Planning for Sprint 2
 
-| Owner | Task | Goal/Notes |
-| --- | --- | --- |
-| [TODO: owner] | [TODO: task] | [TODO: goal or notes] |
-| [TODO: owner] | [TODO: task] | [TODO: goal or notes] |
+| Owner | Task |
+| --- | --- |
+| Kirese | Implement ListingState base class and InvalidTransitionError |
+| Kirese | Implement PendingState |
+| Kirese | Implement ListingLifecycle context |
+| Kirese | Update ListingsService.transition to check ownership, delegate, record and save |
+| Kirese | Write coverage summary and Sprint 2 report |
+| Keon | Implement ProvisionallyAcceptedState |
+| Keon | Implement RejectedState |
+| Keon | Remove the four flags from the Listing model and seed data |
+| Keon | Integration tests for the transition API, ownership, history and visibility |
+| Raymond | Implement VerifiedState |
+| Raymond | Implement ActiveState |
+| Raymond | Add ListingRepository |
+| Raymond | Make student browse use the state's visibility |
+| Calliste | Implement InactiveState |
+| Calliste | Implement SuspendedState |
+| Calliste | Add ListingStatusChange model |
+| Calliste | Unit tests for allowed and illegal transitions per state |
+| Calliste | Update class diagram if the design changes |
