@@ -3,6 +3,17 @@
 from typing import Any
 
 
+STATES: dict[str, type["ListingState"]] = {}
+
+
+def register_state(state_class: type["ListingState"]) -> type["ListingState"]:
+    """Register a listing state class under its name."""
+    if state_class.name in STATES:
+        raise ValueError(f"listing state {state_class.name!r} is already registered")
+    STATES[state_class.name] = state_class
+    return state_class
+
+
 class InvalidTransitionError(Exception):
     """Raised when an action is not allowed by the current listing state."""
 
