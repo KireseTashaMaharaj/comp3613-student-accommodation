@@ -3,6 +3,7 @@
 from typing import Dict, Mapping, Optional, Protocol, Type, Union
 
 from . import listing_states
+from . import states as _registered_states
 from .listing_states import ListingState
 
 
@@ -70,6 +71,16 @@ class ListingLifecycle:
             "new_status": new_status,
             "reason": reason,
         }
+
+    def transition_to(self, status_name: str, reason: Optional[str] = None) -> None:
+        try:
+            state_class = self.states[status_name]
+        except KeyError:
+            raise ValueError(
+                f"no listing state is registered for status {status_name!r}"
+            ) from None
+
+        self.set_state(state_class, reason=reason)
 
     def is_visible_to_students(self) -> bool:
         return self.state.is_visible()
