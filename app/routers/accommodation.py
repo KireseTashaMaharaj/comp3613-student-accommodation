@@ -30,8 +30,12 @@ class ListingBody(BaseModel):
 
 class TransitionBody(BaseModel):
     action: str = Field(
-        description="verify | reject | activate | deactivate | resubmit"
+        description=(
+            "provisionally_accept | verify | reject | resubmit | activate | "
+            "deactivate | suspend | reinstate"
+        )
     )
+    reason: str | None = None
 
 
 class MessageBody(BaseModel):
@@ -81,7 +85,9 @@ def transition(
     body: TransitionBody,
     x_user_id: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    result = listings.transition(_actor_id(x_user_id), listing_id, body.action)
+    result = listings.transition(
+        _actor_id(x_user_id), listing_id, body.action, reason=body.reason
+    )
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error"))
     return result
