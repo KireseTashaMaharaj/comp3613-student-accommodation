@@ -11,7 +11,9 @@ from app.database import engine
 from app.models.listing import Listing
 from app.models.message import Message
 from app.services.housing_auth import get_user
-from app.services.lifecycle import ACTIONS, apply_action, visible_to_students
+from app.services.lifecycle import visible_to_students
+from app.services.listing_lifecycle import ListingLifecycle
+from app.services.listing_states import InvalidTransitionError
 
 ALLOWED_AREAS = {"st_augustine", "mount_hope"}
 
@@ -66,43 +68,61 @@ def submit_listing(
         return {"ok": True, "listing": listing.model_dump()}
 
 
-def transition(actor_id: int, listing_id: int, action: str) -> dict[str, Any]:
+def transition(
+    actor_id: int,
+    listing_id: int,
+    action: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
     actor = get_user(actor_id)
     if not actor:
         return {"ok": False, "error": "unknown user"}
-    if action not in ACTIONS:
-        return {"ok": False, "error": f"action must be one of {ACTIONS}"}
+
+    admin_actions = {
+        "provisionally_accept",
+        "verify",
+        "reject",
+        "suspend",
+        "reinstate",
+    }
+    landlord_actions = {"activate", "deactivate", "resubmit"}
+    allowed_actions = admin_actions | landlord_actions
+    if action not in allowed_actions:
+        return {
+            "ok": False,
+            "error": f"unknown action {action!r}; expected one of {sorted(allowed_actions)}",
+        }
+    if action in admin_actions and actor["role"] != "admin":
+        return {"ok": False, "error": "admin only"}
+    if action in landlord_actions and actor["role"] != "landlord":
+        return {"ok": False, "error": "landlord only"}
+    if action == "reject" and (reason is None or not reason.strip()):
+        return {"ok": False, "error": "reason required"}
 
     with Session(engine) as session:
         listing = session.get(Listing, listing_id)
         if listing is None:
             return {"ok": False, "error": "listing not found"}
-        row = listing.model_dump()
+        if action in landlord_actions and listing.landlord_id != actor_id:
+            return {"ok": False, "error": "not your listing"}
 
-        # Role gates (loose)
-        if action in {"verify", "reject"} and actor["role"] != "admin":
-            return {"ok": False, "error": "admin only"}
-        if action in {"activate", "deactivate", "resubmit"} and actor["role"] not in {
-            "landlord",
-            "admin",
-        }:
-            return {"ok": False, "error": "landlord/admin only"}
-        # DEFECT: any landlord can activate any listing (no ownership check)
+        try:
+            lifecycle = ListingLifecycle(listing)
+            if action == "reject":
+                lifecycle.reject(reason)
+            else:
+                getattr(lifecycle, action)()
+        except (InvalidTransitionError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
 
-        result = apply_action(row, action)
-        if not result.get("ok"):
-            return result
-
-        updated = result["row"]
-        listing.status = updated["status"]
-        listing.flag_pending = updated["flag_pending"]
-        listing.flag_verified = updated["flag_verified"]
-        listing.flag_active = updated["flag_active"]
-        listing.flag_rejected = updated["flag_rejected"]
         session.add(listing)
         session.commit()
         session.refresh(listing)
-        return {"ok": True, "listing": listing.model_dump()}
+        return {
+            "ok": True,
+            "listing": listing.model_dump(),
+            "last_change": lifecycle.last_change,
+        }
 
 
 def browse_for_students(
