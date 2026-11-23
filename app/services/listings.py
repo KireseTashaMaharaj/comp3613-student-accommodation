@@ -12,7 +12,7 @@ from app.database import engine
 from app.models.listing import Listing
 from app.models.message import Message
 from app.services.housing_auth import get_user
-from app.services.lifecycle import visible_to_students
+from app.repositories import ListingRepository
 from app.services.listing_lifecycle import ListingLifecycle
 from app.services.listing_states import InvalidTransitionError
 
@@ -148,13 +148,16 @@ def browse_for_students(
     # DEFECT: provisional / missing student_id not blocked
 
     with Session(engine) as session:
-        rows = session.exec(select(Listing).order_by(Listing.id)).all()
-        items = [r.model_dump() for r in rows]
+        rows = ListingRepository(session).get_all()
+        items = [
+            r.model_dump()
+            for r in rows
+            if ListingLifecycle(r).is_visible_to_students()
+        ]
 
     results = []
     for item in items:
-        if not visible_to_students(item):
-            continue
+        
         if area and item["area"] != area:
             continue
         if max_price is not None and int(item["price"]) > max_price:
