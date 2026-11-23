@@ -56,10 +56,6 @@ def submit_listing(
             contact_email=contact_email,
             photos=photos,
             status="pending",
-            flag_pending=1,
-            flag_verified=0,
-            flag_active=0,
-            flag_rejected=0,
             created_at=_now(),
         )
         session.add(listing)

@@ -88,10 +88,6 @@ def seed(*, reset: bool = False) -> None:
                     contact_email="landlord@example.com",
                     photos="photo1.jpg",
                     status="active",
-                    flag_pending=0,
-                    flag_verified=1,
-                    flag_active=1,
-                    flag_rejected=0,
                     created_at="2099-01-01T10:00:00+00:00",
                 ),
                 Listing(
@@ -104,10 +100,6 @@ def seed(*, reset: bool = False) -> None:
                     contact_email="landlord@example.com",
                     photos="",
                     status="pending",
-                    flag_pending=1,
-                    flag_verified=0,
-                    flag_active=0,
-                    flag_rejected=0,
                     created_at="2099-01-02T10:00:00+00:00",
                 ),
             ]

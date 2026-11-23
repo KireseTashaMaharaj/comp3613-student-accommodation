@@ -13,10 +13,5 @@ class Listing(SQLModel, table=True):
     contact_phone: str
     contact_email: str
     photos: str = ""
-    # Canonical lifecycle label (often drifts from flags below).
+    # Canonical lifecycle status.
     status: str
-    flag_pending: int = 1
-    flag_verified: int = 0
-    flag_active: int = 0
-    flag_rejected: int = 0
-    created_at: str
