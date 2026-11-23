@@ -1,0 +1,152 @@
+classDiagram
+    direction LR
+
+    class Listing {
+        <<model>>
+        +int id
+        +int landlord_id
+        +str title
+        +str area
+        +int price
+        +str amenities
+        +str contact_phone
+        +str contact_email
+        +str photos
+        +str status
+        +str created_at
+    }
+
+    class ListingStatusChange {
+        <<model>>
+        +int id
+        +int listing_id
+        +str old_status
+        +str new_status
+        +int actor_id
+        +str changed_at
+        +str reason
+    }
+
+    class ListingRepository {
+        +get_by_id(listing_id) Listing
+        +get_all(status) list~Listing~
+        +get_by_landlord(landlord_id) list~Listing~
+        +save(listing) Listing
+    }
+
+    class ListingsService {
+        <<module>>
+        +submit_listing(...)
+        +transition(actor_id, listing_id, action, reason)
+        +browse_for_students(...)
+        +list_all(status)
+        +send_message(...)
+    }
+
+    class ListingLifecycle {
+        <<Context>>
+        +Listing listing
+        +dict states
+        +dict last_change
+        +provisionally_accept()
+        +verify()
+        +reject(reason)
+        +resubmit()
+        +activate()
+        +deactivate()
+        +suspend()
+        +reinstate()
+        +set_state(new_state, reason)
+        +transition_to(status_name, reason)
+        +is_visible_to_students()
+    }
+
+    class listing_states {
+        <<module>>
+        +STATES dict
+        +register_state(state_class)
+    }
+
+    class InvalidTransitionError {
+        <<exception>>
+        +str action
+        +str state_name
+    }
+
+    class ListingState {
+        <<abstract>>
+        +str name = "base"
+        +provisionally_accept(ctx)
+        +verify(ctx)
+        +reject(ctx, reason)
+        +resubmit(ctx)
+        +activate(ctx)
+        +deactivate(ctx)
+        +suspend(ctx)
+        +reinstate(ctx)
+        +is_visible() bool
+    }
+
+    class PendingState {
+        <<ConcreteState>>
+        +provisionally_accept(ctx)
+        +verify(ctx)
+        +reject(ctx, reason)
+        +suspend(ctx)
+    }
+
+    class ProvisionallyAcceptedState {
+        <<ConcreteState>>
+        +verify(ctx)
+        +reject(ctx, reason)
+    }
+
+    class VerifiedState {
+        <<ConcreteState>>
+        +activate(ctx)
+        +deactivate(ctx)
+        +suspend(ctx)
+    }
+
+    class ActiveState {
+        <<ConcreteState>>
+        +deactivate(ctx)
+        +suspend(ctx)
+        +is_visible() bool
+    }
+
+    class InactiveState {
+        <<ConcreteState>>
+        +activate(ctx)
+        +suspend(ctx)
+    }
+
+    class RejectedState {
+        <<ConcreteState>>
+        +resubmit(ctx)
+    }
+
+    class SuspendedState {
+        <<ConcreteState>>
+        +reinstate(ctx)
+    }
+
+    ListingLifecycle o-- Listing : wraps
+    ListingLifecycle --> listing_states : reads STATES
+    ListingLifecycle --> ListingState : delegates
+    ListingState <|-- PendingState
+    ListingState <|-- ProvisionallyAcceptedState
+    ListingState <|-- VerifiedState
+    ListingState <|-- ActiveState
+    ListingState <|-- InactiveState
+    ListingState <|-- RejectedState
+    ListingState <|-- SuspendedState
+
+    ListingState ..> InvalidTransitionError : raises
+    listing_states ..> ListingState : register_state
+
+    ListingsService --> ListingLifecycle : creates
+    ListingsService --> ListingRepository : browse_for_students
+    ListingsService --> Listing : transition and submit
+    ListingsService --> ListingStatusChange : creates on transition
+    ListingStatusChange --> Listing : history for

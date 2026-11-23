@@ -475,3 +475,17 @@ Vector RAG▾
 | --- | --- | --- |
 | [TODO: owner] | [TODO: task] | [TODO: goal or notes] |
 | [TODO: owner] | [TODO: task] | [TODO: goal or notes] |
+
+## Sprint 2 class diagram
+
+![Sprint 2 class diagram](diagrams/class-diagram-sprint2.png)
+
+### Design changes since Sprint 1
+
+- ListingStatusChange was added as a persisted lifecycle-history record linked to Listing.
+- ListingRepository was limited to listing CRUD/read methods; it has no lifecycle history or status-change method.
+- ListingsService became a module of public functions, with role, ownership, lifecycle, and history logic handled inside transition().
+- ListingLifecycle became a context with transition_to(), last_change, and delegation to the registered state classes.
+- listing_states gained STATES and register_state() so concrete states register themselves by status name.
+- The lifecycle split into seven concrete states, each overriding only the actions and visibility behavior it permits.
+- browse_for_students now derives visibility by calling ListingLifecycle.is_visible_to_students() instead of relying on Listing flags.
