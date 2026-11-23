@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
+from app.models.listing_status_change import ListingStatusChange
 from app.database import engine
 from app.models.listing import Listing
 from app.models.message import Message
@@ -100,11 +101,14 @@ def transition(
         return {"ok": False, "error": "reason required"}
 
     with Session(engine) as session:
+        
         listing = session.get(Listing, listing_id)
         if listing is None:
             return {"ok": False, "error": "listing not found"}
         if action in landlord_actions and listing.landlord_id != actor_id:
             return {"ok": False, "error": "not your listing"}
+        
+        old_status = listing.status
 
         try:
             lifecycle = ListingLifecycle(listing)
@@ -116,6 +120,16 @@ def transition(
             return {"ok": False, "error": str(exc)}
 
         session.add(listing)
+        session.add(
+            ListingStatusChange(
+                listing_id=listing.id,
+                old_status=old_status,
+                new_status=listing.status,
+                actor_id=actor_id,
+                reason=(reason or "").strip(),
+            )
+        )
+       
         session.commit()
         session.refresh(listing)
         return {
