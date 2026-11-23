@@ -38,7 +38,7 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 # Repo URL and Trello invite link
 
 - Repo URL: https://github.com/KireseTashaMaharaj/comp3613-student-accommodation
-- Trello invite link: [TODO: add Trello invite link]
+- Trello invite link: https://trello.com/invite/b/6afa14e50c61eaff6fe541ca/ATTIe681ab9ba7da000f241b3afd0602f0c681B3A252/comp-3613-bits-giggles
 
 # Requirements
 
@@ -76,7 +76,7 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 
 # Use case diagram
 
-[TODO: add image from docs/diagrams/ here]
+![Use case diagram](diagrams/use-case-diagram.png)
 
 ## Actor notes
 - Student Seeker: browses visible listings, applies location/price/amenity filters, and may communicate only with eligible listings.
@@ -85,11 +85,93 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 
 # Class diagram and pattern rationale
 
+## Pattern evidence
+
+The special feature is the listing lifecycle, covering submission, pending review, verification or rejection, activation, and removal. We used the State pattern so each listing status owns its allowed actions instead of relying on a central set of flags. Now, `ListingLifecycle` acts as the context, `ListingState` is the base state, and seven concrete states implement the lifecycle behavior. `ListingStatusChange` records each status change as history, including the actor and timestamp.
+
+Key implementation files:
+
+- `app/services/listing_states.py` — defines the `ListingState` base and invalid-transition behavior.
+- `app/services/listing_lifecycle.py` — provides the lifecycle context and state registry.
+- `app/services/states/*.py` — contains the seven concrete listing states.
+- `app/services/listings.py` — delegates listing transitions and ownership checks to the lifecycle.
+- `app/models/listing_status_change.py` — stores listing status-change history.
+- `app/repositories/listing.py` — handles listing persistence and reads.
+
+Merged pull requests for Sprint 2:
+
+- #3 — sprint2-1-listing-state-base
+- #4 — sprint2-3-listing-lifecycle
+- #5 — sprint2-2-pendingstate
+- #6 — sprint2-4-service-transition
+- #7 — 17-verified-state
+- #8 — 12-listing-repository
+- #9 — 18-active-state
+- #10 — provisionally-accepted-state
+- #11 — rejected-state
+- #12 — remove-listing-flags
+- #13 — integration-tests
+- #14 — inactive-state
+- #15 — suspended-state
+- #16 — 15-record-status-changes
+- #17 — integration-tests-history
+- #18 — 19-browse-state-visibility
+- #19 — 20-state-unit-tests
+- #20 — integration-tests-visibility
+
 ## Class diagram
-[TODO: add class diagram from docs/design/ if available. No docs/design directory exists in this repository.]
+
+### Sprint 1 inherited class diagram
+![Sprint 1 inherited class diagram](diagrams/inherited-class-diagram.png)
+
+### Sprint 1 proposed class diagram
+![Sprint 1 proposed class diagram](diagrams/proposed-class-diagram.png)
+
+### Sprint 2 class diagram
+![Sprint 2 class diagram](diagrams/class-diagram-sprint2.png)
+
+### Design changes since Sprint 1
+
+- We removed the four status flags so `Listing.status` is the single source of truth.
+- We added `ListingLifecycle`, a `ListingState` base class, and seven concrete states to manage allowed transitions.
+- We updated `ListingsService` to check ownership, delegate transitions, and record status history.
+- We added `ListingStatusChange` for status history and `ListingRepository` for listing persistence.
+- We derive student visibility from the active state.
 
 ## Pattern rationale
-[TODO: add design rationale from docs/design/ if those files are added to the repo.]
+The State pattern fits the listing lifecycle because allowed actions depend on the current state. `ListingLifecycle` acts as the context and delegates actions to `ListingState`; the seven concrete states allow only legal transitions and raise `InvalidTransitionError` otherwise. Listing status is the single source of truth, the old status flags are removed, and visibility is derived from `ActiveState`.
+
+## Test coverage summary - Sprint 2
+
+The requested test run collected 120 tests and reported **120 passed**. The project-wide run covered 2,451 statements and reported **30% overall coverage**. The narrower run covering `app.services`, `app.models`, and `app.repositories` covered 439 statements and reported **81% coverage**.
+
+| File | Statements | Missed | Coverage % |
+| --- | ---: | ---: | ---: |
+| `app/services/listing_states.py` | 32 | 0 | 100% |
+| `app/services/listing_lifecycle.py` | 47 | 0 | 100% |
+| `app/services/states/__init__.py` | 7 | 0 | 100% |
+| `app/services/states/active.py` | 11 | 0 | 100% |
+| `app/services/states/inactive.py` | 9 | 0 | 100% |
+| `app/services/states/pending.py` | 13 | 0 | 100% |
+| `app/services/states/provisionally_accepted.py` | 9 | 0 | 100% |
+| `app/services/states/rejected.py` | 7 | 0 | 100% |
+| `app/services/states/suspended.py` | 7 | 0 | 100% |
+| `app/services/states/verified.py` | 11 | 0 | 100% |
+| `app/services/listings.py` | 101 | 29 | 71% |
+| `app/models/listing.py` | 7 | 0 | 100% |
+| `app/models/listing_status_change.py` | 10 | 0 | 100% |
+| `app/repositories/listing.py` | 28 | 13 | 54% |
+
+The 30% project-wide result is low because coverage includes starter-template code outside the Sprint 2 feature. Actual low-coverage files include `app/report_pdf.py` (0%), `app/transcript_export.py` (0%), `app/usecase_diagram.py` (0%), `app/skill_integrity.py` (0%), `app/cli.py` (0%), and `app/routers/server_config.py` (24%). These large or template-oriented files reduce the whole-project percentage even though the Sprint 2 services and models are mostly or fully covered.
+
+The state unit tests are mainly in `tests/test_listing_state.py` and `tests/test_pending_state.py`; `tests/test_state_transitions.py` also covers transition behavior across states. `tests/test_listing_lifecycle.py` covers lifecycle delegation and state registration. `tests/test_service_transition.py` covers service-level authorization and transition decisions, while `tests/test_status_history.py` covers status-change history and rejection reasons. The integration tests are `tests/integration/test_listing_transitions.py` and `tests/integration/test_student_browse_visibility.py`, with additional general integration coverage in `tests/test_integration.py`; `tests/test_scenario.py` and `tests/test_unit.py` cover the remaining scenario and unit behavior.
+
+### Coverage gaps
+
+- `app/services/listings.py`: uncovered lines 27, 43, 46, 76, 95, 103, 147, 162, 164, 167, 173-177, and 181-200.
+- `app/repositories/listing.py`: uncovered lines 16, 21, 25-30, and 34-42.
+
+The test run reports `ResourceWarning` for unclosed SQLite connections, but these warnings are harmless and do not affect the 120 passing test results.
 
 # Interview transcripts
 
@@ -449,29 +531,63 @@ Vector RAG▾
 
 ```
 
-# Sprint 1 Report
-
-## Planned Tasks
-
-| Owner | Task number and title |
-| --- | --- |
-| [TODO: owner] | [TODO: task number and title] |
-| [TODO: owner] | [TODO: task number and title] |
-
-## Review
-
-| Owner | Task | Status | Comments |
-| --- | --- | --- | --- |
-| [TODO: owner] | [TODO: task] | [TODO: status] | [TODO: comments] |
-| [TODO: owner] | [TODO: task] | [TODO: status] | [TODO: comments] |
-
-## Retrospective
-
-[TODO: add Sprint 1 retrospective findings from project records if available. No sprint record files were found in this repository.]
+# Sprint 2 Report
 
 ## Planning for Sprint 2
 
-| Owner | Task | Goal/Notes |
-| --- | --- | --- |
-| [TODO: owner] | [TODO: task] | [TODO: goal or notes] |
-| [TODO: owner] | [TODO: task] | [TODO: goal or notes] |
+| Owner | Task |
+| --- | --- |
+| Kirese | Implement ListingState base class and InvalidTransitionError |
+| Kirese | Implement PendingState |
+| Kirese | Implement ListingLifecycle context |
+| Kirese | Update ListingsService.transition to check ownership, delegate, record and save |
+| Kirese | Write coverage summary and Sprint 2 report |
+| Keon | Implement ProvisionallyAcceptedState |
+| Keon | Implement RejectedState |
+| Keon | Remove the four flags from the Listing model and seed data |
+| Keon | Integration tests for the transition API, ownership, history and visibility |
+| Raymond | Implement VerifiedState |
+| Raymond | Implement ActiveState |
+| Raymond | Add ListingRepository |
+| Raymond | Make student browse use the state's visibility |
+| Calliste | Implement InactiveState |
+| Calliste | Implement SuspendedState |
+| Calliste | Add ListingStatusChange model |
+| Calliste | Unit tests for allowed and illegal transitions per state |
+| Calliste | Update class diagram if the design changes |
+
+## Sprint 2 Review
+
+| Owner | Task number and title | PR | Status | Comments |
+| --- | --- | --- | --- | --- |
+| Kirese | #11 Implement ListingState base class and InvalidTransitionError | #3 | Completed | done by Kirese |
+| Kirese | #13 Implement PendingState | #5 | Completed | done by Kirese |
+| Kirese | #12 Implement ListingLifecycle context | #4 | Completed | done by Kirese |
+| Kirese | #14 Update ListingsService.transition to check ownership, delegate, record and save | #6 | Completed | ownership checks, delegation and save done by Kirese; status history recording and history tests done by Calliste (merged in PR #16) |
+| Kirese | #27 Write coverage summary and Sprint 2 report | — | Completed | done by Kirese |
+| Keon | #20 Implement ProvisionallyAcceptedState | #10 | Completed | done by Keon |
+| Keon | #21 Implement RejectedState | #11 | Completed | done by Keon |
+| Keon | #22 Remove the four flags from the Listing model and seed data | #12 | Completed | done by Keon |
+| Keon | #30 Integration tests for the transition API, ownership, history and visibility | #13, #17, #20 | Completed | done by Keon |
+| Raymond | #17 Implement VerifiedState | #7 | Completed | done by Raymond |
+| Raymond | #18 Implement ActiveState | #9 | Completed | done by Raymond |
+| Raymond | #16 Add ListingRepository | #8 | Completed | done by Raymond |
+| Raymond | #19 Make student browse use the state's visibility | #18 | Completed | done by Raymond |
+| Calliste | #23 Implement InactiveState | #14 | Completed | done by Keon |
+| Calliste | #24 Implement SuspendedState | #15 | Completed | done by Keon |
+| Calliste | #29 Add ListingStatusChange model | #16 | Completed | done by Calliste |
+| Calliste | #28 Unit tests for allowed and illegal transitions per state | #19 | Completed | done by Raymond |
+| Calliste | #26 Update class diagram if the design changes | — | Completed | done by Kirese (docs/class-diagram-sprint2) |
+
+## Retrospective
+
+Went well: work on the sprint started well before the deadline, which left time to review the code before merging. All 120 tests pass, and every state has its own file. None of our commits went to the lecturer's repo this time, which was a problem in Sprint 1. Some members paired up to finish connected tasks together. Went badly: with other assignments and personal commitments, it was hard to find times for the whole group to work together. A lot of work was done individually with little group input, and the workload ended up uneven. Some pull requests were merged without a second reviewer because reviewers weren't available before the deadline, and some tasks were finished close to the deadline. Changes for Sprint 3: agree on fixed check-in times early in the week, split Sprint 3 tasks more evenly and confirm everyone has a task they can finish, name a backup reviewer for each pull request, and aim to have work ready for review a few days before the deadline.
+
+## Planning for Sprint 3
+
+| Owner | Task |
+| --- | --- |
+| TBD | Deploy to Render |
+| TBD | Record presentation video |
+| TBD | Final report |
+| TBD | Exit interview prep |
