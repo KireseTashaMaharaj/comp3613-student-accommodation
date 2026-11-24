@@ -162,6 +162,10 @@ The requested test run collected 120 tests and reported **120 passed**. The proj
 | `app/models/listing_status_change.py` | 10 | 0 | 100% |
 | `app/repositories/listing.py` | 28 | 13 | 54% |
 
+![Coverage screenshot](coverage-sprint2-test.png)
+
+*Coverage run output (120 passed, 81% on Sprint 2 feature code)*
+
 The 30% project-wide result is low because coverage includes starter-template code outside the Sprint 2 feature. Actual low-coverage files include `app/report_pdf.py` (0%), `app/transcript_export.py` (0%), `app/usecase_diagram.py` (0%), `app/skill_integrity.py` (0%), `app/cli.py` (0%), and `app/routers/server_config.py` (24%). These large or template-oriented files reduce the whole-project percentage even though the Sprint 2 services and models are mostly or fully covered.
 
 The state unit tests are mainly in `tests/test_listing_state.py` and `tests/test_pending_state.py`; `tests/test_state_transitions.py` also covers transition behavior across states. `tests/test_listing_lifecycle.py` covers lifecycle delegation and state registration. `tests/test_service_transition.py` covers service-level authorization and transition decisions, while `tests/test_status_history.py` covers status-change history and rejection reasons. The integration tests are `tests/integration/test_listing_transitions.py` and `tests/integration/test_student_browse_visibility.py`, with additional general integration coverage in `tests/test_integration.py`; `tests/test_scenario.py` and `tests/test_unit.py` cover the remaining scenario and unit behavior.
