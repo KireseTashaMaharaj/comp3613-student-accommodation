@@ -33,6 +33,7 @@ Calliste's commits appear under his second GitHub account, madmancharlo-png.
 
 ## Scenario summary
 The project scenario is Student Accommodation, a referral-based off-campus housing listing platform with a restricted campus model. The repo contains the starter project and the assignment text that frames the challenge as a student accommodation listing and lifecycle problem. Source: [README.md](../README.md), [ASSIGNMENT.md](../ASSIGNMENT.md), and [docs/ACCEPTANCE.md](ACCEPTANCE.md).
+The three users are the student seeker, landlord, and campus admin. The special feature is the listing lifecycle.
 
 ## Special feature
 The special feature is the listing lifecycle and transitions: submission → pending → admin verification/rejection → active/inactive visibility rules. This is the feature explicitly called out in [ASSIGNMENT.md](../ASSIGNMENT.md) and the interview evidence in [docs/interviews/student-accommodation-interview.md](interviews/student-accommodation-interview.md).
@@ -42,7 +43,31 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 
 ### Scope
 
-TODO: define the project scope.
+#### In scope
+
+- The State-pattern listing lifecycle and `ListingStatusChange` history.
+- Landlord ownership checks on status transitions and student visibility derived from listing state.
+- Automated tests for lifecycle transitions, ownership checks, status history, and visibility.
+- Render deployment configuration in `render.yaml`.
+
+#### Out of scope / future work
+
+- Payments, contracts, and booking checkout are excluded by the referral-only requirement (REQ-03).
+- REQ-01: student eligibility by registered ID or provisional pathway is not enforced; browse checks the student role only.
+- REQ-02: listings are not restricted to St. Augustine and Mount Hope.
+- REQ-07: area and price filters exist, but amenity matching is a case-sensitive substring check.
+- REQ-08: messaging exists, but students can message listings that are not visible to them.
+- REQ-10 and REQ-12: rejection reasons and status history are stored, but there is no endpoint for landlords to view the reason or users to review status history.
+- REQ-13 and REQ-24: there is no listing edit flow.
+- REQ-14: landlords are not notified about listing status changes.
+- REQ-15: ownership is checked for landlord status transitions, but there is no landlord listing-view or edit endpoint.
+- REQ-16: responsive CSS is present, but mobile usability and load time have not been tested; TODO: confirm.
+- REQ-17: students cannot record/cancel interest, and landlords are not notified of withdrawn interest.
+- REQ-18: saved-listing notifications are not implemented.
+- REQ-19: stale-listing reminders and automatic hiding are not implemented.
+- REQ-20: inquiry tracking and viewing-slot booking are not implemented.
+- REQ-21: saving and comparing listings are not implemented.
+- REQ-22: reporting a problem listing is not implemented.
 
 # 3. Requirements
 
@@ -113,7 +138,17 @@ The State pattern fits the listing lifecycle because allowed actions depend on t
 
 # 6. Inherited codebase notes / defects addressed
 
-TODO: document inherited codebase notes and defects addressed (card #32).
+The old design stored a listing's status in five places—a status string and four flags—that could disagree; our design gives each listing one status, and each status decides which moves are allowed.
+
+| Inherited defect | Where (file/function) | Effect | How we fixed it | Test that proves it |
+| --- | --- | --- | --- | --- |
+| Status and four flags could disagree. | `app/models/listing.py`; `app/services/lifecycle.py::apply_action()` | The displayed status and lifecycle flags could describe different states. | `Listing.status` is the single source of truth; `ListingLifecycle` delegates moves to state classes. | `tests/test_state_transitions.py::test_allowed_transition_moves_to_expected_status`; TODO: no test for flag/status drift itself. |
+| Actions could skip review, activate rejected listings, or move invalid states. | `app/services/lifecycle.py::apply_action()` | Listings could reach states without the required review or from an invalid starting state. | `PendingState`, `RejectedState.resubmit`, `ActiveState`, and the other state classes allow only defined moves. | `tests/test_state_transitions.py::test_illegal_transition_raises_and_leaves_status_unchanged`. |
+| Student visibility could follow the active flag even when status was not active. | `app/services/lifecycle.py::visible_to_students()` | A pending or rejected listing with a stale active flag could appear to students. | `ActiveState.is_visible()` defines visibility from the current state; `ListingsService.browse_for_students()` uses it. | `tests/test_state_transitions.py::test_only_active_listings_are_visible_to_students`; `tests/integration/test_student_browse_visibility.py::test_student_browse_shows_only_the_active_listing`. |
+| A landlord could transition another landlord's listing. | `app/services/listings.py::transition()` | Role checks did not confirm the listing owner. | `ListingsService.transition()` checks landlord ownership before a landlord action. | `tests/integration/test_listing_transitions.py::test_landlord_cannot_transition_another_landlords_listing`. |
+| Status changes were not recorded. | `app/services/listings.py::transition()` | There was no persistent record of the old/new status, actor, time, or reason. | `ListingsService.transition()` writes a `ListingStatusChange` for successful transitions. | `tests/integration/test_listing_transitions.py::test_successful_transition_creates_one_status_change_record`; `tests/test_status_history.py::test_successful_transition_records_status_change`. |
+
+Known remaining defects: ASSIGNMENT.md also calls out eligibility and geographic restrictions, filters, and messaging. Eligibility is not enforced beyond checking the student role, listings are not restricted to the allowed areas, amenity matching is a case-sensitive substring check, and messages can be sent about pending or rejected listings. These issues remain unresolved.
 
 # 7. Implementation of the special-feature pattern
 
