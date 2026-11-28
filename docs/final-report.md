@@ -378,15 +378,39 @@ Pull requests went to our group repo this time; two were opened against the lect
 
 | Owner | Task |
 | --- | --- |
-| Keon | Deploy to Render |
-| Calliste | Record presentation video and prepare slides |
-| Raymond | Test report (Postman collection run and results) |
-| Kirese | Final report |
-| Everyone | Exit interview prep (each member reviews their own commits and Trello cards) |
+| Keon | #38 Deploy to Render |
+| Calliste | #39 Prepare slides |
+| Calliste | #40 Record and upload presentation video |
+| Raymond | #41 Postman collection and test report |
+| Kirese | #31 Restructure final report into 12-section layout |
+| Kirese | #32 Intro, scope and inherited defects |
+| Kirese | #33 Transition walkthrough |
+| Raymond | #34 Add testing and evaluation section |
+| Keon | #35 Add deployment section |
+| Kirese | #36 Sprint 3 report |
+| Kirese | #45 Exit interview prep |
+| Raymond | #46 Exit interview prep |
+| Keon | #47 Exit interview prep |
+| Calliste | #48 Exit interview prep |
 
 ### Sprint 3 Review
 
-TODO: add the Sprint 3 review.
+| Owner | Task number and title | PR | Status | Comments |
+| --- | --- | --- | --- | --- |
+| Keon | #38 Deploy to Render | — | Completed | deployed app is available at https://student-accommodation-z30b.onrender.com |
+| Calliste | #39 Prepare slides | — | In progress | |
+| Calliste | #40 Record and upload presentation video | — | In progress | YouTube presentation URL is not yet in the report |
+| Raymond | #41 Postman collection and test report | #23 | Completed | done by Raymond |
+| Kirese | #31 Restructure final report into 12-section layout | #22 | Completed | done by Kirese |
+| Kirese | #32 Intro, scope and inherited defects | #24 | In progress | PR #24 is open, so it is not yet merged |
+| Kirese | #33 Transition walkthrough | #24 | In progress | PR #24 is open, so it is not yet merged |
+| Raymond | #34 Add testing and evaluation section | #24 | In review | written by Raymond; added to the report in PR #24 (not merged yet) |
+| Keon | #35 Add deployment section | — | In review | done by Keon, waiting for review |
+| Kirese | #36 Sprint 3 report | — | In progress | |
+| Kirese | #45 Exit interview prep | — | In progress | |
+| Raymond | #46 Exit interview prep | — | In progress | |
+| Keon | #47 Exit interview prep | — | In progress | |
+| Calliste | #48 Exit interview prep | — | In progress | |
 
 ### Sprint 3 Retrospective
 
