@@ -33,6 +33,7 @@ Calliste's commits appear under his second GitHub account, madmancharlo-png.
 
 ## Scenario summary
 The project scenario is Student Accommodation, a referral-based off-campus housing listing platform with a restricted campus model. The repo contains the starter project and the assignment text that frames the challenge as a student accommodation listing and lifecycle problem. Source: [README.md](../README.md), [ASSIGNMENT.md](../ASSIGNMENT.md), and [docs/ACCEPTANCE.md](ACCEPTANCE.md).
+The three users are the student seeker, landlord, and campus admin. The special feature is the listing lifecycle.
 
 ## Special feature
 The special feature is the listing lifecycle and transitions: submission → pending → admin verification/rejection → active/inactive visibility rules. This is the feature explicitly called out in [ASSIGNMENT.md](../ASSIGNMENT.md) and the interview evidence in [docs/interviews/student-accommodation-interview.md](interviews/student-accommodation-interview.md).
@@ -42,7 +43,31 @@ We interviewed stakeholders for the Job Board and Career Advising scenarios befo
 
 ### Scope
 
-TODO: define the project scope.
+#### In scope
+
+- The State-pattern listing lifecycle and `ListingStatusChange` history.
+- Landlord ownership checks on status transitions and student visibility derived from listing state.
+- Automated tests for lifecycle transitions, ownership checks, status history, and visibility.
+- Render deployment configuration in `render.yaml`.
+
+#### Out of scope / future work
+
+- Payments, contracts, and booking checkout are excluded by the referral-only requirement (REQ-03).
+- REQ-01: student eligibility by registered ID or provisional pathway is not enforced; browse checks the student role only.
+- REQ-02: listings are not restricted to St. Augustine and Mount Hope.
+- REQ-07: area and price filters exist, but amenity matching is a case-sensitive substring check.
+- REQ-08: messaging exists, but students can message listings that are not visible to them.
+- REQ-10 and REQ-12: rejection reasons and status history are stored, but there is no endpoint for landlords to view the reason or users to review status history.
+- REQ-13 and REQ-24: there is no listing edit flow.
+- REQ-14: landlords are not notified about listing status changes.
+- REQ-15: ownership is checked for landlord status transitions, but there is no landlord listing-view or edit endpoint.
+- REQ-16: we added responsive CSS but didn't actually test it on a phone or check load times.
+- REQ-17: students cannot record/cancel interest, and landlords are not notified of withdrawn interest.
+- REQ-18: saved-listing notifications are not implemented.
+- REQ-19: stale-listing reminders and automatic hiding are not implemented.
+- REQ-20: inquiry tracking and viewing-slot booking are not implemented.
+- REQ-21: saving and comparing listings are not implemented.
+- REQ-22: reporting a problem listing is not implemented.
 
 # 3. Requirements
 
@@ -113,7 +138,17 @@ The State pattern fits the listing lifecycle because allowed actions depend on t
 
 # 6. Inherited codebase notes / defects addressed
 
-TODO: document inherited codebase notes and defects addressed (card #32).
+The old design stored a listing's status in five places—a status string and four flags—that could disagree; our design gives each listing one status, and each status decides which moves are allowed.
+
+| Inherited defect | Where (file/function) | Effect | How we fixed it | Test that proves it |
+| --- | --- | --- | --- | --- |
+| Status and four flags could disagree. | `app/models/listing.py`; `app/services/lifecycle.py::apply_action()` | The displayed status and lifecycle flags could describe different states. | `Listing.status` is the single source of truth; `ListingLifecycle` delegates moves to state classes. | `tests/test_state_transitions.py::test_allowed_transition_moves_to_expected_status`; we didn't need a test for this since the four flags were removed from `Listing`, so they can't disagree anymore. |
+| Actions could skip review, activate rejected listings, or move invalid states. | `app/services/lifecycle.py::apply_action()` | Listings could reach states without the required review or from an invalid starting state. | `PendingState`, `RejectedState.resubmit`, `ActiveState`, and the other state classes allow only defined moves. | `tests/test_state_transitions.py::test_illegal_transition_raises_and_leaves_status_unchanged`. |
+| Student visibility could follow the active flag even when status was not active. | `app/services/lifecycle.py::visible_to_students()` | A pending or rejected listing with a stale active flag could appear to students. | `ActiveState.is_visible()` defines visibility from the current state; `ListingsService.browse_for_students()` uses it. | `tests/test_state_transitions.py::test_only_active_listings_are_visible_to_students`; `tests/integration/test_student_browse_visibility.py::test_student_browse_shows_only_the_active_listing`. |
+| A landlord could transition another landlord's listing. | `app/services/listings.py::transition()` | Role checks did not confirm the listing owner. | `ListingsService.transition()` checks landlord ownership before a landlord action. | `tests/integration/test_listing_transitions.py::test_landlord_cannot_transition_another_landlords_listing`. |
+| Status changes were not recorded. | `app/services/listings.py::transition()` | There was no persistent record of the old/new status, actor, time, or reason. | `ListingsService.transition()` writes a `ListingStatusChange` for successful transitions. | `tests/integration/test_listing_transitions.py::test_successful_transition_creates_one_status_change_record`; `tests/test_status_history.py::test_successful_transition_records_status_change`. |
+
+Known remaining defects: ASSIGNMENT.md also calls out eligibility and geographic restrictions, filters, and messaging. Eligibility is not enforced beyond checking the student role, listings are not restricted to the allowed areas, amenity matching is a case-sensitive substring check, and messages can be sent about pending or rejected listings. These issues remain unresolved.
 
 # 7. Implementation of the special-feature pattern
 
@@ -130,9 +165,43 @@ Key implementation files:
 - `app/models/listing_status_change.py` — stores listing status-change history.
 - `app/repositories/listing.py` — handles listing persistence and reads.
 
-TODO: add a transition walkthrough (card #33).
+## Transition walkthrough
+
+To show how the pattern works, here are two examples of what happens when someone tries to change a listing's status.
+
+**Example 1: admin verifies a pending listing**
+
+1. The admin sends a request to `POST /api/listings/{id}/transition` with `{"action": "verify"}`. The router in `accommodation.py` passes it to `transition()` in `app/services/listings.py` (the listings service).
+2. The service does the checks first. It makes sure the user exists, the action is a real one, and since `verify` is an admin action, that the user is actually an admin. (If it was a landlord action, it would also check that the landlord owns the listing.)
+3. Then it loads the listing and makes a `ListingLifecycle` for it. The lifecycle looks at the listing's status, which is `pending`, and picks `PendingState` from the registry.
+4. The service calls `lifecycle.verify()`. The lifecycle doesn't decide anything on its own, it just passes the action to the current state, so `PendingState.verify()` runs.
+5. Verifying is allowed from pending, so `PendingState` moves the listing to `verified`.
+6. Last, the service saves the listing and adds a `ListingStatusChange` record (old status, new status, who did it and when) in the same commit, and sends back the updated listing.
+
+We test this in `test_landlord_submits_and_admin_approves_listing` and `test_successful_transition_creates_one_status_change_record`.
+
+**Example 2: an illegal move gets blocked**
+
+Say a landlord tries to activate their listing while it's still pending. They own it, so the ownership check passes. But `PendingState` doesn't have an `activate` method, so the base `ListingState` version runs instead and raises `InvalidTransitionError` ("cannot activate a listing that is pending"). The service returns the error before saving anything, so the user gets a 400, the listing stays pending, and no history record is made.
+
+We test this in `test_pending_listing_cannot_transition_directly_to_active` and `test_illegal_and_unauthorized_transitions_create_no_status_changes`.
+
+**Why this is better than the old code**
+
+Each state only has the moves it's allowed to make, so the rules for each status are in one place. If we wanted to add a new status, we'd just make a new state class with `@register_state` and import it in `states/__init__.py`. Nothing else would need to change. In the old code we would have had to edit the long if/else chain in `apply_action()` and update the four flags, which is how the bugs got in there in the first place.
 
 # 8. Testing & evaluation
+
+### Approach
+We tested the special feature (the State-pattern listing lifecycle) at three levels:
+
+| Level | What it checks | Where |
+| --- | --- | --- |
+| Unit | Each state allows only its legal actions and raises `InvalidTransitionError` for the rest; each state's visibility to students | `tests/test_listing_state.py`, `tests/test_pending_state.py`, `tests/test_state_transitions.py` (65 tests, mostly parametrized over every state and action) |
+| Service | Role and ownership checks, delegation to the lifecycle, status history and rejection reasons | `tests/test_service_transition.py`, `tests/test_status_history.py`, `tests/test_listing_lifecycle.py` |
+| Integration (API) | The real endpoints through `TestClient`: submit, transition, history, and student browse showing only the active listing | `tests/integration/test_listing_transitions.py`, `tests/integration/test_student_browse_visibility.py` |
+
+We tested the failure cases as well as the happy paths: illegal transitions leave the status unchanged, a landlord can't use admin actions or move another landlord's listing, and `reject` without a reason is refused.
 
 ## Test coverage summary - Sprint 2
 
@@ -172,11 +241,31 @@ The test run reports `ResourceWarning` for unclosed SQLite connections, but thes
 
 ## Postman results
 
-TODO: add Postman results.
+To check the special feature end to end through the HTTP API, we wrote a Postman collection (`postman/Student-Accommodation-Lifecycle.postman_collection.json`, merged in PR #23). It has 29 requests with 56 test assertions, run in order with the Collection Runner. It covers:
+
+- the happy path: submit (pending) -> admin verify -> landlord activate -> landlord deactivate, with a student browse request after each step showing that only the active listing is visible;
+- illegal moves, which must return HTTP 400: activating an already active listing, a landlord using the admin-only verify, a second landlord moving someone else's listing, activating a suspended or rejected listing, and rejecting without a reason;
+- suspend and reinstate, and the reject -> resubmit path;
+- the admin listing endpoint, and a student being refused access to it (HTTP 403).
+
+| Run | Target | Requests | Assertions | Result |
+| --- | --- | --- | --- | --- |
+| Local | http://127.0.0.1:5000 | 29 | 56 | All passed |
+| Deployed | https://student-accommodation-z30b.onrender.com | 29 | 56 | All passed |
+
+![Postman Collection Runner on the deployed app: 56 passed, 0 failed](postman-run-deployed.jpeg)
+
+### Evaluation and honest gaps
+
+- All 120 automated tests pass. The Sprint 2 feature code (states, lifecycle, models) has 81% coverage and every state file has 100%. The project-wide figure is 30%, because it includes starter-template code that isn't part of the special feature.
+- `app/services/listings.py` is at 71% and `app/repositories/listing.py` at 54%. Some repository and service paths, like the filter branches, aren't covered by tests.
+- Some requirements aren't implemented, so they have no tests (see Scope): REQ-01 student eligibility, REQ-02 area restriction, REQ-14 landlord notifications, and the listing edit flow.
+- There's no test for the old status/flag drift itself, because we removed the flags instead.
+- Postman checks the API behaviour but doesn't replace the unit tests. It only checks the HTTP responses on the happy and illegal paths above.
 
 # 9. Deployment
 
-- Deploy URL: TODO: add the deployment URL.
+- Deploy URL: https://student-accommodation-z30b.onrender.com
 - Deployment steps: TODO: add deployment steps.
 - Screenshot of the special feature live: TODO: add a screenshot.
 
@@ -208,7 +297,7 @@ Owner key (who actually did the work, from the Trello board and commit history):
 | KM | #1 Set up repository | Completed | repo forked, collaborators added, link attached |
 | KM | #2 Create project doc draft | Completed | docs/report.md linked on card |
 | KM | #3 Conduct exploratory interviews (Job Board, Career Advising) | Completed | transcripts attached |
-| TODO: confirm (planned Kirese, review says C) | #4 Conduct Student Accommodation interviews | Completed | transcript attached |
+| Kirese | #4 Conduct Student Accommodation interview (Campus Admin) | Completed | transcript attached |
 | KC | #5 Conduct Student Accommodation interview (Student Seeker) | Completed | transcript attached |
 | C | #6 Conduct Student Accommodation interview (Landlord) | Completed | transcript attached |
 | KC | #7 Write requirements list | Completed | first version pushed by Kirese in pull request #1, updated by Keon |
@@ -259,7 +348,7 @@ Owner key (who actually did the work, from the Trello board and commit history):
 | Kirese | #13 Implement PendingState | #5 | Completed | done by Kirese |
 | Kirese | #12 Implement ListingLifecycle context | #4 | Completed | done by Kirese |
 | Kirese | #14 Update ListingsService.transition to check ownership, delegate, record and save | #6 | Completed | ownership checks, delegation and save done by Kirese; status history recording and history tests done by Calliste (merged in PR #16) |
-| TODO: confirm | #15 Record status changes | #16 | Completed | TODO: confirm |
+| Calliste | #15 Record status changes | PR #16 | Completed | status history recording and history tests done by Calliste |
 | Raymond | #16 Add ListingRepository | #8 | Completed | done by Raymond |
 | Kirese | #27 Write coverage summary and Sprint 2 report | — | Completed | done by Kirese |
 | Keon | #20 Implement ProvisionallyAcceptedState | #10 | Completed | done by Keon |
@@ -289,15 +378,39 @@ Pull requests went to our group repo this time; two were opened against the lect
 
 | Owner | Task |
 | --- | --- |
-| Keon | Deploy to Render |
-| Calliste | Record presentation video and prepare slides |
-| Raymond | Test report (Postman collection run and results) |
-| Kirese | Final report |
-| Everyone | Exit interview prep (each member reviews their own commits and Trello cards) |
+| Keon | #38 Deploy to Render |
+| Calliste | #39 Prepare slides |
+| Calliste | #40 Record and upload presentation video |
+| Raymond | #41 Postman collection and test report |
+| Kirese | #31 Restructure final report into 12-section layout |
+| Kirese | #32 Intro, scope and inherited defects |
+| Kirese | #33 Transition walkthrough |
+| Raymond | #34 Add testing and evaluation section |
+| Keon | #35 Add deployment section |
+| Kirese | #36 Sprint 3 report |
+| Kirese | #45 Exit interview prep |
+| Raymond | #46 Exit interview prep |
+| Keon | #47 Exit interview prep |
+| Calliste | #48 Exit interview prep |
 
 ### Sprint 3 Review
 
-TODO: add the Sprint 3 review.
+| Owner | Task number and title | PR | Status | Comments |
+| --- | --- | --- | --- | --- |
+| Keon | #38 Deploy to Render | — | Completed | deployed app is available at https://student-accommodation-z30b.onrender.com |
+| Calliste | #39 Prepare slides | — | In progress | |
+| Calliste | #40 Record and upload presentation video | — | In progress | YouTube presentation URL is not yet in the report |
+| Raymond | #41 Postman collection and test report | #23 | Completed | done by Raymond |
+| Kirese | #31 Restructure final report into 12-section layout | #22 | Completed | done by Kirese |
+| Kirese | #32 Intro, scope and inherited defects | #24 | In progress | PR #24 is open, so it is not yet merged |
+| Kirese | #33 Transition walkthrough | #24 | In progress | PR #24 is open, so it is not yet merged |
+| Raymond | #34 Add testing and evaluation section | #24 | In review | written by Raymond; added to the report in PR #24 (not merged yet) |
+| Keon | #35 Add deployment section | — | In review | done by Keon, waiting for review |
+| Kirese | #36 Sprint 3 report | — | In progress | |
+| Kirese | #45 Exit interview prep | — | In progress | |
+| Raymond | #46 Exit interview prep | — | In progress | |
+| Keon | #47 Exit interview prep | — | In progress | |
+| Calliste | #48 Exit interview prep | — | In progress | |
 
 ### Sprint 3 Retrospective
 
@@ -307,7 +420,7 @@ TODO: add the Sprint 3 retrospective.
 
 - Repo URL: [GitHub repository](https://github.com/KireseTashaMaharaj/comp3613-student-accommodation)
 - Trello invite link: [Trello board (invite link, no expiry)](https://trello.com/invite/b/6afa14e50c61eaff6fe541ca/ATTIe681ab9ba7da000f241b3afd0602f0c681B3A252/comp-3613-bits-giggles)
-- Deployed app: TODO: add the deployed app URL.
+- Deployed app: https://student-accommodation-z30b.onrender.com
 - YouTube presentation: TODO: add the YouTube presentation URL.
 
 # 12. Appendices
